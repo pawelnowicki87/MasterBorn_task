@@ -18,7 +18,7 @@
  * - "Resize handler might have a leak" - Marcus
  */
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, useId } from 'react';
 import type {
   Product,
   ProductOption,
@@ -90,6 +90,17 @@ const isAddOnAvailable = (
   return dependencyValue === addOn.dependsOn.requiredValue;
 };
 
+const getAvailableAddOnIds = (
+  selectedIds: string[],
+  addOns: AddOn[],
+  selections: Record<string, string | number | boolean>,
+): string[] => {
+  return selectedIds.filter((id) => {
+    const addOn = addOns.find((item) => item.id === id);
+    return addOn !== undefined && isAddOnAvailable(addOn, selections);
+  });
+};
+
 const formatTimestamp = (isoString: string): string => {
   const date = new Date(isoString);
   return date.toLocaleString();
@@ -102,6 +113,14 @@ const calculateColorColumns = (
 ): number => {
   const columns = Math.floor((containerWidth + gap) / (swatchSize + gap));
   return Math.max(1, columns);
+};
+
+const isQuickAddShortcut = (
+  event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'metaKey'>,
+): boolean => {
+  return (
+    event.key === 'Enter' && event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey
+  );
 };
 
 // ============================================================================
@@ -119,44 +138,67 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
   // State
   // -------------------------------------------------------------------------
 
+  const [startingConfiguration] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const encodedConfig = params.get('config');
+    const sharedConfiguration = encodedConfig ? decodeConfigurationFromUrl(encodedConfig) : null;
+    const invalidShareLink =
+      encodedConfig !== null &&
+      (!sharedConfiguration ||
+        (sharedConfiguration.productId !== undefined &&
+          sharedConfiguration.productId !== product.id));
+
+    return {
+      ...initialConfiguration,
+      ...(!invalidShareLink ? sharedConfiguration : null),
+      invalidShareLink,
+    };
+  });
+
   const [selections, setSelections] = useState<Record<string, string | number | boolean>>(
-    () => initialConfiguration?.selections || getDefaultSelections(product),
+    () => startingConfiguration.selections || getDefaultSelections(product),
   );
 
-  const [selectedAddOns, setSelectedAddOns] = useState<string[]>(
-    () => initialConfiguration?.addOns || [],
+  const [selectedAddOns, setSelectedAddOns] = useState<string[]>(() =>
+    getAvailableAddOnIds(startingConfiguration.addOns || [], product.addOns, selections),
   );
 
-  const [quantity, setQuantity] = useState<number>(() => initialConfiguration?.quantity || 1);
+  const [quantity, setQuantity] = useState<number>(() => startingConfiguration.quantity || 1);
 
   const [configId] = useState<string>(() => initialConfiguration?.id || generateConfigId());
 
   const [isDirty, setIsDirty] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
-  const [draftName, setDraftName] = useState('');
+  const [draftName, setDraftName] = useState(() => startingConfiguration.name || '');
 
   const [showDraftModal, setShowDraftModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [drafts, setDrafts] = useState<Draft[]>([]);
 
-  const [validation, setValidation] = useState<ValidationResult | null>(null);
-  const [isValid, setIsValid] = useState(false);
+  const [validationState, setValidationState] = useState<{
+    config: Configuration;
+    product: Product;
+    result: ValidationResult;
+  } | null>(null);
 
   const [previewUrl, setPreviewUrl] = useState<string>(product.imageUrl);
 
   const [error, setError] = useState<string | null>(null);
 
-  const [shareUrl, setShareUrl] = useState<string>('');
-
   const containerRef = useRef<HTMLDivElement>(null);
   const colorPickerRef = useRef<HTMLDivElement>(null);
+  const draftDialogRef = useRef<HTMLDialogElement>(null);
+  const shareDialogRef = useRef<HTMLDialogElement>(null);
+  const quickAddButtonRef = useRef<HTMLButtonElement>(null);
   const lastFocusedElement = useRef<HTMLElement | null>(null);
+  const onConfigurationChangeRef = useRef(onConfigurationChange);
+  const instanceId = useId();
 
   // -------------------------------------------------------------------------
   // Derived State
   // -------------------------------------------------------------------------
 
-  const currentConfig: Configuration = useMemo(
+  const baseConfig: Configuration = useMemo(
     () => ({
       id: configId,
       productId: product.id,
@@ -165,17 +207,41 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
       quantity,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      name: draftName || undefined,
     }),
-    [configId, product.id, selections, selectedAddOns, quantity, draftName],
+    [configId, product.id, selections, selectedAddOns, quantity],
   );
+
+  const currentConfig: Configuration = useMemo(
+    () => ({
+      ...baseConfig,
+      name: draftName || undefined,
+      updatedAt: new Date().toISOString(),
+    }),
+    [baseConfig, draftName],
+  );
+
+  const shareUrl = useMemo(() => {
+    if (!showShareModal) return '';
+
+    const encoded = encodeConfigurationToUrl(currentConfig);
+    const url = new URL(window.location.href);
+    url.searchParams.set('config', encoded);
+    return url.toString();
+  }, [showShareModal, currentConfig]);
 
   const {
     price,
     formattedTotal,
     isLoading: isPriceLoading,
     error: priceError,
-  } = usePriceCalculation(currentConfig, product);
+  } = usePriceCalculation(baseConfig, product);
+
+  const validation =
+    validationState?.config === baseConfig && validationState?.product === product
+      ? validationState.result
+      : null;
+  const canAddToCart =
+    !readOnly && !isPriceLoading && !priceError && !!price && validation?.valid === true;
 
   const appliedDiscount = getAppliedDiscountPercentage(quantity);
   const nextTier = getNextDiscountTier(quantity);
@@ -205,6 +271,42 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
 
     window.addEventListener('resize', handleResize);
     handleResize();
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handlePageShortcut = (event: KeyboardEvent) => {
+      if (
+        !isQuickAddShortcut(event) ||
+        event.repeat ||
+        event.isComposing ||
+        event.defaultPrevented ||
+        (event.target !== document.body && event.target !== document.documentElement)
+      ) {
+        return;
+      }
+
+      const container = containerRef.current;
+      const button = quickAddButtonRef.current;
+      if (
+        !container ||
+        !button ||
+        button.disabled ||
+        container.querySelector('dialog') ||
+        document.querySelectorAll('.configurator').length !== 1
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      button.click();
+    };
+
+    document.addEventListener('keydown', handlePageShortcut);
+    return () => document.removeEventListener('keydown', handlePageShortcut);
   }, []);
 
   useEffect(() => {
@@ -212,12 +314,16 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
 
     const validate = async () => {
       try {
-        const result = await validateConfiguration(currentConfig, product);
+        const result = await validateConfiguration(baseConfig, product);
         if (!cancelled) {
-          setValidation(result);
-          setIsValid(true);
+          setValidationState({ config: baseConfig, product, result });
         }
-      } catch {}
+      } catch {
+        if (!cancelled) {
+          setValidationState(null);
+          setError(ERROR_CODES.UNKNOWN);
+        }
+      }
     };
 
     validate();
@@ -225,14 +331,14 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [currentConfig, product]);
+  }, [baseConfig, product]);
 
   useEffect(() => {
     let cancelled = false;
 
     const updatePreview = async () => {
       try {
-        const preview = await generatePreview(currentConfig, product);
+        const preview = await generatePreview(baseConfig, product);
         if (!cancelled) {
           setPreviewUrl(preview.imageUrl);
         }
@@ -246,42 +352,73 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [currentConfig, product]);
+  }, [baseConfig, product]);
 
   useEffect(() => {
-    if (onConfigurationChange) {
-      onConfigurationChange(currentConfig);
-    }
-    setIsDirty(true);
-  }, [selections, selectedAddOns, quantity]);
+    onConfigurationChangeRef.current = onConfigurationChange;
+  }, [onConfigurationChange]);
 
   useEffect(() => {
-    if (showDraftModal) {
-      getAllDrafts().then(setDrafts);
-    }
-  }, [showDraftModal]);
+    onConfigurationChangeRef.current?.(currentConfig);
+  }, [currentConfig]);
 
   useEffect(() => {
-    if (showShareModal) {
-      const encoded = encodeConfigurationToUrl(currentConfig);
-      const url = `${window.location.origin}${window.location.pathname}?config=${encoded}`;
-      setShareUrl(url);
-    }
-  }, [showShareModal, currentConfig]);
+    if (!showDraftModal) return;
+
+    let cancelled = false;
+
+    getAllDrafts()
+      .then((savedDrafts) => {
+        if (!cancelled) {
+          setDrafts(savedDrafts.filter((draft) => draft.configuration.productId === product.id));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setError(ERROR_CODES.UNKNOWN);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showDraftModal, product.id]);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const encodedConfig = params.get('config');
+    const dialog = showDraftModal
+      ? draftDialogRef.current
+      : showShareModal
+        ? shareDialogRef.current
+        : null;
+    if (!dialog) return;
 
-    if (encodedConfig) {
-      const decoded = decodeConfigurationFromUrl(encodedConfig);
-      if (decoded) {
-        if (decoded.selections) setSelections(decoded.selections);
-        if (decoded.addOns) setSelectedAddOns(decoded.addOns);
-        if (decoded.quantity) setQuantity(decoded.quantity);
+    const trigger = lastFocusedElement.current;
+    dialog.showModal();
+
+    const handleTab = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+
+      const controls = dialog.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), input:not(:disabled)',
+      );
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      const target = event.shiftKey
+        ? document.activeElement === first && last
+        : document.activeElement === last && first;
+
+      if (target) {
+        event.preventDefault();
+        target.focus();
       }
-    }
-  }, []);
+    };
+
+    dialog.addEventListener('keydown', handleTab);
+
+    return () => {
+      dialog.removeEventListener('keydown', handleTab);
+      dialog.close();
+      trigger?.focus();
+    };
+  }, [showDraftModal, showShareModal]);
 
   // -------------------------------------------------------------------------
   // Event Handlers
@@ -289,29 +426,13 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
 
   const handleOptionChange = useCallback(
     (optionId: string, value: string | number | boolean) => {
-      setSelections((prev) => ({
-        ...prev,
-        [optionId]: value,
-      }));
+      const nextSelections = { ...selections, [optionId]: value };
 
-      const option = product.options.find((o) => o.id === optionId);
-      // Clean up any dependent add-ons whose requirement is no longer met.
-      // Toggles are handled in handleAddOnToggle, so we only need to do this for select options.
-      if (option && option.type === 'select') {
-        const dependentAddOns = product.addOns.filter((a) => a.dependsOn?.optionId === optionId);
-
-        for (const addOn of dependentAddOns) {
-          if (addOn.dependsOn && value !== addOn.dependsOn.requiredValue) {
-            const index = selectedAddOns.indexOf(addOn.id);
-            if (index > -1) {
-              selectedAddOns.splice(index, 1);
-              setSelectedAddOns(selectedAddOns);
-            }
-          }
-        }
-      }
+      setIsDirty(true);
+      setSelections(nextSelections);
+      setSelectedAddOns((prev) => getAvailableAddOnIds(prev, product.addOns, nextSelections));
     },
-    [product.options, product.addOns, selectedAddOns],
+    [selections, product.addOns],
   );
 
   const handleAddOnToggle = useCallback(
@@ -324,6 +445,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
         return;
       }
 
+      setIsDirty(true);
       setSelectedAddOns((prev) => {
         if (prev.includes(addOnId)) {
           return prev.filter((id) => id !== addOnId);
@@ -342,6 +464,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
       const max = quantityOption?.max ?? 999;
 
       const clampedQuantity = Math.max(min, Math.min(max, newQuantity));
+      setIsDirty(true);
       setQuantity(clampedQuantity);
     },
     [product.options],
@@ -352,7 +475,6 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
       await saveDraft(currentConfig, draftName || 'Untitled Draft');
       setLastSaved(new Date());
       setIsDirty(false);
-      setDraftName('');
 
       setShowDraftModal(false);
     } catch {
@@ -360,20 +482,35 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
     }
   }, [currentConfig, draftName]);
 
-  const handleLoadDraft = useCallback(async (draftId: string) => {
-    try {
-      const draft = await loadDraft(draftId);
-      if (draft) {
-        setSelections(draft.configuration.selections);
-        setSelectedAddOns(draft.configuration.addOns);
-        setQuantity(draft.configuration.quantity);
-        setShowDraftModal(false);
-        setIsDirty(false);
+  const handleLoadDraft = useCallback(
+    async (draftId: string) => {
+      try {
+        const draft = await loadDraft(draftId);
+        if (draft) {
+          if (draft.configuration.productId !== product.id) {
+            setError(ERROR_CODES.VALIDATION_CONFLICT);
+            return;
+          }
+
+          setSelections(draft.configuration.selections);
+          setSelectedAddOns(
+            getAvailableAddOnIds(
+              draft.configuration.addOns,
+              product.addOns,
+              draft.configuration.selections,
+            ),
+          );
+          setQuantity(draft.configuration.quantity);
+          setDraftName(draft.configuration.name || draft.name);
+          setShowDraftModal(false);
+          setIsDirty(false);
+        }
+      } catch {
+        setError(ERROR_CODES.UNKNOWN);
       }
-    } catch {
-      setError(ERROR_CODES.UNKNOWN);
-    }
-  }, []);
+    },
+    [product.id, product.addOns],
+  );
 
   const handleDeleteDraft = useCallback(async (draftId: string) => {
     try {
@@ -385,21 +522,52 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
   }, []);
 
   const handleAddToCart = useCallback(() => {
+    if (readOnly || isPriceLoading || priceError || !price) return;
+
     if (!validation?.valid) {
       setError(validation?.errors[0]?.code || ERROR_CODES.UNKNOWN);
       return;
     }
 
-    if (price && onAddToCart) {
+    if (onAddToCart) {
       onAddToCart(currentConfig, price);
     }
-  }, [validation, price, currentConfig, onAddToCart]);
+  }, [readOnly, isPriceLoading, priceError, validation, price, currentConfig, onAddToCart]);
 
   const handleQuickAdd = useCallback(() => {
-    if (price && onAddToCart) {
-      onAddToCart(currentConfig, price);
-    }
-  }, [price, currentConfig, onAddToCart]);
+    handleAddToCart();
+  }, [handleAddToCart]);
+
+  const handleQuickAddShortcut = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (
+        !isQuickAddShortcut(event) ||
+        event.nativeEvent.isComposing ||
+        event.defaultPrevented ||
+        showDraftModal ||
+        showShareModal
+      ) {
+        return;
+      }
+
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          target.closest(
+            'textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="number"])',
+          ))
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      if (event.repeat || !canAddToCart) return;
+
+      handleQuickAdd();
+    },
+    [showDraftModal, showShareModal, canAddToCart, handleQuickAdd],
+  );
 
   const handleCopyShareUrl = useCallback(() => {
     navigator.clipboard
@@ -416,20 +584,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
     } else {
       setShowShareModal(false);
     }
-
-    if (lastFocusedElement.current) {
-      lastFocusedElement.current.focus();
-    }
   }, []);
-
-  const handleModalKeyDown = useCallback(
-    (e: React.KeyboardEvent, modalType: 'draft' | 'share') => {
-      if (e.key === 'Escape') {
-        handleModalClose(modalType);
-      }
-    },
-    [handleModalClose],
-  );
 
   const handleDiscardChanges = useCallback(() => {
     setSelections(getDefaultSelections(product));
@@ -475,26 +630,34 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
 
     return (
       <div className="option-group" key={option.id}>
-        <label className="option-label">
+        <span className="option-label" id={`${instanceId}-${option.id}-label`}>
           {option.name}
           {option.required && <span className="required">*</span>}
-        </label>
+        </span>
         <div
           className="color-picker"
           ref={colorPickerRef}
           role="radiogroup"
-          aria-label={option.name}
+          aria-labelledby={`${instanceId}-${option.id}-label`}
         >
-          {option.choices?.map((choice, index) => (
-            <div
-              key={index}
-              className={`color-swatch ${currentValue === choice.value ? 'selected' : ''}`}
+          {option.choices?.map((choice) => (
+            <label
+              key={choice.id}
+              className={`color-swatch ${currentValue === choice.value ? 'selected' : ''} ${readOnly || !choice.available ? 'disabled' : ''}`}
               style={{ backgroundColor: choice.colorHex }}
-              onClick={() => !readOnly && handleOptionChange(option.id, choice.value)}
               title={choice.label}
-              role="radio"
-              aria-checked={currentValue === choice.value}
-            />
+            >
+              <input
+                type="radio"
+                className="color-swatch-input"
+                name={`${instanceId}-${option.id}`}
+                value={choice.value}
+                checked={currentValue === choice.value}
+                onChange={() => handleOptionChange(option.id, choice.value)}
+                disabled={readOnly || !choice.available}
+                aria-label={choice.label}
+              />
+            </label>
           ))}
         </div>
       </div>
@@ -552,18 +715,14 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
     return (
       <div className="option-group" key={option.id}>
         <div className="toggle-control">
-          <div
+          <button
+            type="button"
             className={`toggle-switch ${currentValue ? 'active' : ''}`}
-            onClick={() => !readOnly && handleOptionChange(option.id, !currentValue)}
+            onClick={() => handleOptionChange(option.id, !currentValue)}
             role="switch"
             aria-checked={currentValue}
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                handleOptionChange(option.id, !currentValue);
-              }
-            }}
+            aria-label={option.name}
+            disabled={readOnly}
           />
           <span className="toggle-label">{option.name}</span>
         </div>
@@ -598,29 +757,32 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
     const isAvailable = isAddOnAvailable(addOn, selections);
 
     return (
-      <div
-        key={addOn.name}
+      <label
+        key={addOn.id}
         className={`addon-item ${isSelected ? 'selected' : ''} ${!isAvailable ? 'disabled' : ''}`}
-        onClick={() => !readOnly && isAvailable && handleAddOnToggle(addOn.id)}
       >
         <input
           type="checkbox"
           className="addon-checkbox"
           checked={isSelected}
-          onChange={() => {}}
+          onChange={() => handleAddOnToggle(addOn.id)}
           disabled={readOnly || !isAvailable}
+          aria-labelledby={`${instanceId}-${addOn.id}-name`}
+          aria-describedby={`${instanceId}-${addOn.id}-description`}
         />
-        <div className="addon-info">
-          <div className="addon-name">{addOn.name}</div>
-          <div className="addon-description">
+        <span className="addon-info">
+          <span className="addon-name" id={`${instanceId}-${addOn.id}-name`}>
+            {addOn.name}
+          </span>
+          <span className="addon-description" id={`${instanceId}-${addOn.id}-description`}>
             {addOn.description}
             {!isAvailable && addOn.dependsOn && (
               <span style={{ color: '#e74c3c' }}> (Requires {addOn.dependsOn.optionId})</span>
             )}
-          </div>
-        </div>
-        <div className="addon-price">+{formatPrice(addOn.price, product.currency)}</div>
-      </div>
+          </span>
+        </span>
+        <span className="addon-price">+{formatPrice(addOn.price, product.currency)}</span>
+      </label>
     );
   };
 
@@ -683,14 +845,21 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
     if (!showDraftModal) return null;
 
     return (
-      <div
+      <dialog
+        ref={draftDialogRef}
         className="modal-overlay"
         onClick={() => handleModalClose('draft')}
-        onKeyDown={(e) => handleModalKeyDown(e, 'draft')}
+        aria-labelledby={`${instanceId}-draft-title`}
+        onCancel={(e) => {
+          e.preventDefault();
+          handleModalClose('draft');
+        }}
       >
         <div className="modal" onClick={(e) => e.stopPropagation()}>
           <div className="modal-header">
-            <h3 className="modal-title">Saved Drafts</h3>
+            <h3 className="modal-title" id={`${instanceId}-draft-title`}>
+              Saved Drafts
+            </h3>
             <button
               className="modal-close"
               onClick={() => handleModalClose('draft')}
@@ -740,6 +909,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
               <h4>Save Current Configuration</h4>
               <input
                 type="text"
+                aria-label="Draft name (optional)"
                 placeholder="Draft name (optional)"
                 value={draftName}
                 onChange={(e) => setDraftName(e.target.value)}
@@ -757,7 +927,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
             </div>
           </div>
         </div>
-      </div>
+      </dialog>
     );
   };
 
@@ -765,14 +935,21 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
     if (!showShareModal) return null;
 
     return (
-      <div
+      <dialog
+        ref={shareDialogRef}
         className="modal-overlay"
         onClick={() => handleModalClose('share')}
-        onKeyDown={(e) => handleModalKeyDown(e, 'share')}
+        aria-labelledby={`${instanceId}-share-title`}
+        onCancel={(e) => {
+          e.preventDefault();
+          handleModalClose('share');
+        }}
       >
         <div className="modal" onClick={(e) => e.stopPropagation()}>
           <div className="modal-header">
-            <h3 className="modal-title">Share Configuration</h3>
+            <h3 className="modal-title" id={`${instanceId}-share-title`}>
+              Share Configuration
+            </h3>
             <button
               className="modal-close"
               onClick={() => handleModalClose('share')}
@@ -785,6 +962,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
             <p>Copy this link to share your configuration:</p>
             <input
               type="text"
+              aria-label="Configuration link"
               className="share-url-input"
               value={shareUrl}
               readOnly
@@ -800,7 +978,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
             </button>
           </div>
         </div>
-      </div>
+      </dialog>
     );
   };
 
@@ -809,7 +987,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
   // -------------------------------------------------------------------------
 
   return (
-    <div className="configurator" ref={containerRef}>
+    <div className="configurator" ref={containerRef} onKeyDown={handleQuickAddShortcut}>
       <div className="configurator-header">
         <div>
           <h1 className="configurator-title">{product.name}</h1>
@@ -818,8 +996,8 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
         <div className="configurator-actions">
           <button
             className="btn btn-secondary"
-            onClick={() => {
-              lastFocusedElement.current = document.activeElement as HTMLElement;
+            onClick={(e) => {
+              lastFocusedElement.current = e.currentTarget;
               setShowDraftModal(true);
             }}
           >
@@ -827,8 +1005,8 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
           </button>
           <button
             className="btn btn-secondary"
-            onClick={() => {
-              lastFocusedElement.current = document.activeElement as HTMLElement;
+            onClick={(e) => {
+              lastFocusedElement.current = e.currentTarget;
               setShowShareModal(true);
             }}
           >
@@ -841,6 +1019,13 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
           )}
         </div>
       </div>
+
+      {startingConfiguration.invalidShareLink && (
+        <div className="error-message" role="alert">
+          This configuration link is invalid or belongs to another product. Please ask for a new
+          link.
+        </div>
+      )}
 
       {(error || priceError) && (
         <div className="error-message">
@@ -881,16 +1066,22 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
             {renderPriceBreakdown()}
 
             <div className="validation-indicator">
-              {isValid ? '✓ Configuration validated' : '⏳ Validating…'}
+              {!validation
+                ? '⏳ Validating…'
+                : validation.valid
+                  ? '✓ Configuration validated'
+                  : '⚠ Configuration needs attention'}
             </div>
 
             <div className="quick-add-section">
               <button
+                ref={quickAddButtonRef}
                 className="quick-add-btn"
                 onClick={handleQuickAdd}
-                disabled={readOnly || !validation?.valid}
+                disabled={!canAddToCart}
+                aria-keyshortcuts="Control+Enter"
               >
-                ⚡ Quick Add to Cart
+                ⚡ Quick Add to Cart (Ctrl+Enter)
               </button>
             </div>
           </div>
@@ -898,7 +1089,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
           <button
             className="btn btn-success btn-block"
             onClick={handleAddToCart}
-            disabled={readOnly || !validation?.valid || isPriceLoading}
+            disabled={!canAddToCart}
           >
             {isPriceLoading ? 'Calculating...' : 'Add to Cart'}
           </button>
@@ -932,9 +1123,9 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
                 <span>Add-ons ({selectedAddOns.length}):</span>
                 <span>
                   {selectedAddOns
-                    .map((id) => {
-                      const addOn = availableAddOns.get(id)!;
-                      return formatPrice(addOn.price, product.currency);
+                    .flatMap((id) => {
+                      const addOn = availableAddOns.get(id);
+                      return addOn ? [formatPrice(addOn.price, product.currency)] : [];
                     })
                     .join(' + ')}
                 </span>

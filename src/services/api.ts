@@ -214,13 +214,18 @@ function formatCurrency(amount: number, currency: string): string {
  */
 export function encodeConfigurationToUrl(config: Configuration): string {
   const data = JSON.stringify({
+    p: config.productId,
     s: config.selections,
     a: config.addOns,
     q: config.quantity,
     n: config.name,
   });
 
-  return btoa(data);
+  const bytes = new TextEncoder().encode(data);
+  const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join('');
+  const encoded = btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+  return `v1.${encoded}`;
 }
 
 /**
@@ -228,15 +233,49 @@ export function encodeConfigurationToUrl(config: Configuration): string {
  */
 export function decodeConfigurationFromUrl(encoded: string): Partial<Configuration> | null {
   try {
-    const data = JSON.parse(atob(encoded));
+    const isUtf8 = encoded.startsWith('v1.');
+    const payload = isUtf8 ? encoded.slice(3) : encoded;
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/').replace(/ /g, '+');
+    const binary = atob(base64);
+    const json = isUtf8
+      ? new TextDecoder('utf-8', { fatal: true }).decode(
+          Uint8Array.from(binary, (char) => char.charCodeAt(0)),
+        )
+      : binary;
+    const data = JSON.parse(json) as Record<string, unknown>;
+
+    if (
+      !data ||
+      typeof data !== 'object' ||
+      Array.isArray(data) ||
+      !data.s ||
+      typeof data.s !== 'object' ||
+      Array.isArray(data.s) ||
+      !Object.values(data.s).every(
+        (value) =>
+          typeof value === 'string' ||
+          typeof value === 'boolean' ||
+          (typeof value === 'number' && Number.isFinite(value)),
+      ) ||
+      !Array.isArray(data.a) ||
+      !data.a.every((value) => typeof value === 'string') ||
+      typeof data.q !== 'number' ||
+      !Number.isSafeInteger(data.q) ||
+      data.q < 1 ||
+      (data.n !== undefined && typeof data.n !== 'string') ||
+      (data.p !== undefined && typeof data.p !== 'string')
+    ) {
+      return null;
+    }
+
     return {
-      selections: data.s || {},
-      addOns: data.a || [],
-      quantity: data.q || 1,
+      productId: data.p,
+      selections: data.s as Configuration['selections'],
+      addOns: data.a,
+      quantity: data.q,
       name: data.n,
     };
-  } catch (e) {
-    console.error('Failed to decode configuration:', e);
+  } catch {
     return null;
   }
 }
