@@ -90,6 +90,17 @@ const isAddOnAvailable = (
   return dependencyValue === addOn.dependsOn.requiredValue;
 };
 
+const getAvailableAddOnIds = (
+  selectedIds: string[],
+  addOns: AddOn[],
+  selections: Record<string, string | number | boolean>,
+): string[] => {
+  return selectedIds.filter((id) => {
+    const addOn = addOns.find((item) => item.id === id);
+    return addOn !== undefined && isAddOnAvailable(addOn, selections);
+  });
+};
+
 const formatTimestamp = (isoString: string): string => {
   const date = new Date(isoString);
   return date.toLocaleString();
@@ -131,8 +142,8 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
     () => startingConfiguration.selections || getDefaultSelections(product),
   );
 
-  const [selectedAddOns, setSelectedAddOns] = useState<string[]>(
-    () => startingConfiguration.addOns || [],
+  const [selectedAddOns, setSelectedAddOns] = useState<string[]>(() =>
+    getAvailableAddOnIds(startingConfiguration.addOns || [], product.addOns, selections),
   );
 
   const [quantity, setQuantity] = useState<number>(() => startingConfiguration.quantity || 1);
@@ -285,30 +296,13 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
 
   const handleOptionChange = useCallback(
     (optionId: string, value: string | number | boolean) => {
+      const nextSelections = { ...selections, [optionId]: value };
+
       setIsDirty(true);
-      setSelections((prev) => ({
-        ...prev,
-        [optionId]: value,
-      }));
-
-      const option = product.options.find((o) => o.id === optionId);
-      // Clean up any dependent add-ons whose requirement is no longer met.
-      // Toggles are handled in handleAddOnToggle, so we only need to do this for select options.
-      if (option && option.type === 'select') {
-        const dependentAddOns = product.addOns.filter((a) => a.dependsOn?.optionId === optionId);
-
-        for (const addOn of dependentAddOns) {
-          if (addOn.dependsOn && value !== addOn.dependsOn.requiredValue) {
-            const index = selectedAddOns.indexOf(addOn.id);
-            if (index > -1) {
-              selectedAddOns.splice(index, 1);
-              setSelectedAddOns(selectedAddOns);
-            }
-          }
-        }
-      }
+      setSelections(nextSelections);
+      setSelectedAddOns((prev) => getAvailableAddOnIds(prev, product.addOns, nextSelections));
     },
-    [product.options, product.addOns, selectedAddOns],
+    [selections, product.addOns],
   );
 
   const handleAddOnToggle = useCallback(
@@ -359,20 +353,29 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
     }
   }, [currentConfig, draftName]);
 
-  const handleLoadDraft = useCallback(async (draftId: string) => {
-    try {
-      const draft = await loadDraft(draftId);
-      if (draft) {
-        setSelections(draft.configuration.selections);
-        setSelectedAddOns(draft.configuration.addOns);
-        setQuantity(draft.configuration.quantity);
-        setShowDraftModal(false);
-        setIsDirty(false);
+  const handleLoadDraft = useCallback(
+    async (draftId: string) => {
+      try {
+        const draft = await loadDraft(draftId);
+        if (draft) {
+          setSelections(draft.configuration.selections);
+          setSelectedAddOns(
+            getAvailableAddOnIds(
+              draft.configuration.addOns,
+              product.addOns,
+              draft.configuration.selections,
+            ),
+          );
+          setQuantity(draft.configuration.quantity);
+          setShowDraftModal(false);
+          setIsDirty(false);
+        }
+      } catch {
+        setError(ERROR_CODES.UNKNOWN);
       }
-    } catch {
-      setError(ERROR_CODES.UNKNOWN);
-    }
-  }, []);
+    },
+    [product.addOns],
+  );
 
   const handleDeleteDraft = useCallback(async (draftId: string) => {
     try {
@@ -933,9 +936,9 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
                 <span>Add-ons ({selectedAddOns.length}):</span>
                 <span>
                   {selectedAddOns
-                    .map((id) => {
-                      const addOn = availableAddOns.get(id)!;
-                      return formatPrice(addOn.price, product.currency);
+                    .flatMap((id) => {
+                      const addOn = availableAddOns.get(id);
+                      return addOn ? [formatPrice(addOn.price, product.currency)] : [];
                     })
                     .join(' + ')}
                 </span>
