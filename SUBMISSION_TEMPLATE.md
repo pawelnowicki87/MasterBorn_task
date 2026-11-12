@@ -85,6 +85,7 @@ I added versioned UTF-8/Base64URL encoding, kept legacy decoding and checked the
 - Removed the resize listener in effect cleanup.
 - Kept parent notifications tied to configuration changes while using the latest callback.
 - Limited drafts to the current product and rejected mismatched drafts before changing state.
+- Separated name edits from pricing, validation and preview requests to prevent flickering while typing.
 
 ## Validation
 
@@ -94,6 +95,7 @@ I added versioned UTF-8/Base64URL encoding, kept legacy decoding and checked the
 - In 25 StrictMode mount/unmount cycles, all resize listeners were removed.
 - Rechecked inline parent callbacks and cross-product draft loading, including a draft changed in another tab.
 - Checked the main Enter key with left Ctrl, right Ctrl and both together, with focus on Quick Add and on the page background. Also checked Enter, Space and shortcut blocking during calculation or text editing.
+- Checked name edits with request counters: typing did not trigger pricing, validation or preview calls. Saving, sharing and cart actions kept the latest name, including Polish letters and emoji. Quantity changes still recalculated the price and blocked cart actions while pending.
 
 The browser checks used temporary local harnesses with controlled responses where needed. No test framework was added. External placeholder images were blocked during those checks. I did not carry out a full WCAG audit or a long-session performance profile.
 
@@ -106,7 +108,6 @@ With `pnpm dev` running, [open the T-shirt example](http://localhost:5173/?confi
 - The component is still large. I avoided a broad refactor within the time limit.
 - URL checks cover data structure, but full product-choice and quantity-limit validation still needs work.
 - Prices still use floating-point arithmetic.
-- Editing a configuration name still triggers pricing, preview and validation requests.
 
 ### Potential Improvements for the Future
 
