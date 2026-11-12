@@ -83,6 +83,8 @@ I added versioned UTF-8/Base64URL encoding, kept legacy decoding and checked the
 - Removed the unused debounced price hook, replaced two `any` types and fixed the existing lint errors.
 - Moved dirty-state updates into handlers and URL loading into initialization.
 - Removed the resize listener in effect cleanup.
+- Kept parent notifications tied to configuration changes while using the latest callback.
+- Limited drafts to the current product and rejected mismatched drafts before changing state.
 
 ## Validation
 
@@ -90,6 +92,7 @@ I added versioned UTF-8/Base64URL encoding, kept legacy decoding and checked the
 - Full `pnpm format:check` still fails on **19 unchanged template files**. I left those outside this change.
 - Browser checks covered response ordering, cart safeguards, add-on dependencies, keyboard controls, dialogs, Ctrl+Enter and share-link compatibility.
 - In 25 StrictMode mount/unmount cycles, all resize listeners were removed.
+- Rechecked inline parent callbacks and cross-product draft loading, including a draft changed in another tab.
 
 The browser checks used temporary local harnesses with controlled responses where needed. No test framework was added. External placeholder images were blocked during those checks. I did not carry out a full WCAG audit or a long-session performance profile.
 

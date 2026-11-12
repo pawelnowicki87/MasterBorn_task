@@ -182,6 +182,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
   const draftDialogRef = useRef<HTMLDialogElement>(null);
   const shareDialogRef = useRef<HTMLDialogElement>(null);
   const lastFocusedElement = useRef<HTMLElement | null>(null);
+  const onConfigurationChangeRef = useRef(onConfigurationChange);
   const instanceId = useId();
 
   // -------------------------------------------------------------------------
@@ -305,16 +306,32 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
   }, [currentConfig, product]);
 
   useEffect(() => {
-    if (onConfigurationChange) {
-      onConfigurationChange(currentConfig);
-    }
-  }, [currentConfig, onConfigurationChange]);
+    onConfigurationChangeRef.current = onConfigurationChange;
+  }, [onConfigurationChange]);
 
   useEffect(() => {
-    if (showDraftModal) {
-      getAllDrafts().then(setDrafts);
-    }
-  }, [showDraftModal]);
+    onConfigurationChangeRef.current?.(currentConfig);
+  }, [currentConfig]);
+
+  useEffect(() => {
+    if (!showDraftModal) return;
+
+    let cancelled = false;
+
+    getAllDrafts()
+      .then((savedDrafts) => {
+        if (!cancelled) {
+          setDrafts(savedDrafts.filter((draft) => draft.configuration.productId === product.id));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setError(ERROR_CODES.UNKNOWN);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showDraftModal, product.id]);
 
   useEffect(() => {
     const dialog = showDraftModal
@@ -421,6 +438,11 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
       try {
         const draft = await loadDraft(draftId);
         if (draft) {
+          if (draft.configuration.productId !== product.id) {
+            setError(ERROR_CODES.VALIDATION_CONFLICT);
+            return;
+          }
+
           setSelections(draft.configuration.selections);
           setSelectedAddOns(
             getAvailableAddOnIds(
@@ -438,7 +460,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
         setError(ERROR_CODES.UNKNOWN);
       }
     },
-    [product.addOns],
+    [product.id, product.addOns],
   );
 
   const handleDeleteDraft = useCallback(async (draftId: string) => {
