@@ -141,6 +141,6 @@ export interface ConfigChangeEvent {
   type: 'option' | 'addon' | 'quantity';
   optionId?: string;
   addOnId?: string;
-  previousValue: any;
-  newValue: any;
+  previousValue: string | number | boolean | string[] | undefined;
+  newValue: string | number | boolean | string[];
 }

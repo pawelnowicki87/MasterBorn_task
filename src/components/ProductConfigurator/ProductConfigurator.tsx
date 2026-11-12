@@ -119,15 +119,23 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
   // State
   // -------------------------------------------------------------------------
 
+  const [startingConfiguration] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const encodedConfig = params.get('config');
+    const sharedConfiguration = encodedConfig ? decodeConfigurationFromUrl(encodedConfig) : null;
+
+    return { ...initialConfiguration, ...sharedConfiguration };
+  });
+
   const [selections, setSelections] = useState<Record<string, string | number | boolean>>(
-    () => initialConfiguration?.selections || getDefaultSelections(product),
+    () => startingConfiguration.selections || getDefaultSelections(product),
   );
 
   const [selectedAddOns, setSelectedAddOns] = useState<string[]>(
-    () => initialConfiguration?.addOns || [],
+    () => startingConfiguration.addOns || [],
   );
 
-  const [quantity, setQuantity] = useState<number>(() => initialConfiguration?.quantity || 1);
+  const [quantity, setQuantity] = useState<number>(() => startingConfiguration.quantity || 1);
 
   const [configId] = useState<string>(() => initialConfiguration?.id || generateConfigId());
 
@@ -145,8 +153,6 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
   const [previewUrl, setPreviewUrl] = useState<string>(product.imageUrl);
 
   const [error, setError] = useState<string | null>(null);
-
-  const [shareUrl, setShareUrl] = useState<string>('');
 
   const containerRef = useRef<HTMLDivElement>(null);
   const colorPickerRef = useRef<HTMLDivElement>(null);
@@ -169,6 +175,13 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
     }),
     [configId, product.id, selections, selectedAddOns, quantity, draftName],
   );
+
+  const shareUrl = useMemo(() => {
+    if (!showShareModal) return '';
+
+    const encoded = encodeConfigurationToUrl(currentConfig);
+    return `${window.location.origin}${window.location.pathname}?config=${encoded}`;
+  }, [showShareModal, currentConfig]);
 
   const {
     price,
@@ -217,7 +230,13 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
           setValidation(result);
           setIsValid(true);
         }
-      } catch {}
+      } catch {
+        if (!cancelled) {
+          setValidation(null);
+          setIsValid(false);
+          setError(ERROR_CODES.UNKNOWN);
+        }
+      }
     };
 
     validate();
@@ -252,8 +271,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
     if (onConfigurationChange) {
       onConfigurationChange(currentConfig);
     }
-    setIsDirty(true);
-  }, [selections, selectedAddOns, quantity]);
+  }, [currentConfig, onConfigurationChange]);
 
   useEffect(() => {
     if (showDraftModal) {
@@ -261,34 +279,13 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
     }
   }, [showDraftModal]);
 
-  useEffect(() => {
-    if (showShareModal) {
-      const encoded = encodeConfigurationToUrl(currentConfig);
-      const url = `${window.location.origin}${window.location.pathname}?config=${encoded}`;
-      setShareUrl(url);
-    }
-  }, [showShareModal, currentConfig]);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const encodedConfig = params.get('config');
-
-    if (encodedConfig) {
-      const decoded = decodeConfigurationFromUrl(encodedConfig);
-      if (decoded) {
-        if (decoded.selections) setSelections(decoded.selections);
-        if (decoded.addOns) setSelectedAddOns(decoded.addOns);
-        if (decoded.quantity) setQuantity(decoded.quantity);
-      }
-    }
-  }, []);
-
   // -------------------------------------------------------------------------
   // Event Handlers
   // -------------------------------------------------------------------------
 
   const handleOptionChange = useCallback(
     (optionId: string, value: string | number | boolean) => {
+      setIsDirty(true);
       setSelections((prev) => ({
         ...prev,
         [optionId]: value,
@@ -324,6 +321,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
         return;
       }
 
+      setIsDirty(true);
       setSelectedAddOns((prev) => {
         if (prev.includes(addOnId)) {
           return prev.filter((id) => id !== addOnId);
@@ -342,6 +340,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
       const max = quantityOption?.max ?? 999;
 
       const clampedQuantity = Math.max(min, Math.min(max, newQuantity));
+      setIsDirty(true);
       setQuantity(clampedQuantity);
     },
     [product.options],
@@ -385,21 +384,21 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
   }, []);
 
   const handleAddToCart = useCallback(() => {
+    if (readOnly || isPriceLoading || priceError || !price) return;
+
     if (!validation?.valid) {
       setError(validation?.errors[0]?.code || ERROR_CODES.UNKNOWN);
       return;
     }
 
-    if (price && onAddToCart) {
+    if (onAddToCart) {
       onAddToCart(currentConfig, price);
     }
-  }, [validation, price, currentConfig, onAddToCart]);
+  }, [readOnly, isPriceLoading, priceError, validation, price, currentConfig, onAddToCart]);
 
   const handleQuickAdd = useCallback(() => {
-    if (price && onAddToCart) {
-      onAddToCart(currentConfig, price);
-    }
-  }, [price, currentConfig, onAddToCart]);
+    handleAddToCart();
+  }, [handleAddToCart]);
 
   const handleCopyShareUrl = useCallback(() => {
     navigator.clipboard
@@ -888,7 +887,9 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
               <button
                 className="quick-add-btn"
                 onClick={handleQuickAdd}
-                disabled={readOnly || !validation?.valid}
+                disabled={
+                  readOnly || !validation?.valid || isPriceLoading || !!priceError || !price
+                }
               >
                 ⚡ Quick Add to Cart
               </button>
@@ -898,7 +899,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
           <button
             className="btn btn-success btn-block"
             onClick={handleAddToCart}
-            disabled={readOnly || !validation?.valid || isPriceLoading}
+            disabled={readOnly || !validation?.valid || isPriceLoading || !!priceError || !price}
           >
             {isPriceLoading ? 'Calculating...' : 'Add to Cart'}
           </button>
