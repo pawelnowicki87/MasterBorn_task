@@ -11,7 +11,7 @@ I spent about **4.5 hours** on the task, excluding breaks.
 1. **CFG-142 / CFG-149:** Fixed price updates and loading state. Old responses cannot replace the current price, and cart actions wait for a current result.
 2. **CFG-148:** Fixed the packaging crash and removed add-ons when their requirements stop being met. This also applies to loaded drafts and shared configurations.
 3. **CFG-152:** Added keyboard support for colors and controls, visible focus and focus handling in dialogs.
-4. **CFG-145:** Added Ctrl+Enter for Quick Add, with the same price and validation checks as the button.
+4. **CFG-145:** Added Ctrl+Enter for Quick Add, with the same price and validation checks as the button. It also works from the page background when one configurator is present.
 5. **CFG-147:** Fixed Unicode share links, restored the product and configuration name, and kept older links working.
 6. **CFG-143, partial:** Added cleanup for the resize listener. I have not confirmed that this explains all reported performance problems.
 
@@ -93,6 +93,7 @@ I added versioned UTF-8/Base64URL encoding, kept legacy decoding and checked the
 - Browser checks covered response ordering, cart safeguards, add-on dependencies, keyboard controls, dialogs, Ctrl+Enter and share-link compatibility.
 - In 25 StrictMode mount/unmount cycles, all resize listeners were removed.
 - Rechecked inline parent callbacks and cross-product draft loading, including a draft changed in another tab.
+- Checked the main Enter key with left Ctrl, right Ctrl and both together, with focus on Quick Add and on the page background. Also checked Enter, Space and shortcut blocking during calculation or text editing.
 
 The browser checks used temporary local harnesses with controlled responses where needed. No test framework was added. External placeholder images were blocked during those checks. I did not carry out a full WCAG audit or a long-session performance profile.
 

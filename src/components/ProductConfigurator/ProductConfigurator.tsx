@@ -115,6 +115,14 @@ const calculateColorColumns = (
   return Math.max(1, columns);
 };
 
+const isQuickAddShortcut = (
+  event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'metaKey'>,
+): boolean => {
+  return (
+    event.key === 'Enter' && event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey
+  );
+};
+
 // ============================================================================
 // Main Component
 // ============================================================================
@@ -181,6 +189,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
   const colorPickerRef = useRef<HTMLDivElement>(null);
   const draftDialogRef = useRef<HTMLDialogElement>(null);
   const shareDialogRef = useRef<HTMLDialogElement>(null);
+  const quickAddButtonRef = useRef<HTMLButtonElement>(null);
   const lastFocusedElement = useRef<HTMLElement | null>(null);
   const onConfigurationChangeRef = useRef(onConfigurationChange);
   const instanceId = useId();
@@ -258,6 +267,38 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
     return () => {
       window.removeEventListener('resize', handleResize);
     };
+  }, []);
+
+  useEffect(() => {
+    const handlePageShortcut = (event: KeyboardEvent) => {
+      if (
+        !isQuickAddShortcut(event) ||
+        event.repeat ||
+        event.isComposing ||
+        event.defaultPrevented ||
+        (event.target !== document.body && event.target !== document.documentElement)
+      ) {
+        return;
+      }
+
+      const container = containerRef.current;
+      const button = quickAddButtonRef.current;
+      if (
+        !container ||
+        !button ||
+        button.disabled ||
+        container.querySelector('dialog') ||
+        document.querySelectorAll('.configurator').length !== 1
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      button.click();
+    };
+
+    document.addEventListener('keydown', handlePageShortcut);
+    return () => document.removeEventListener('keydown', handlePageShortcut);
   }, []);
 
   useEffect(() => {
@@ -492,11 +533,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
   const handleQuickAddShortcut = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
       if (
-        event.key !== 'Enter' ||
-        !event.ctrlKey ||
-        event.altKey ||
-        event.shiftKey ||
-        event.metaKey ||
+        !isQuickAddShortcut(event) ||
         event.nativeEvent.isComposing ||
         event.defaultPrevented ||
         showDraftModal ||
@@ -1030,6 +1067,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
 
             <div className="quick-add-section">
               <button
+                ref={quickAddButtonRef}
                 className="quick-add-btn"
                 onClick={handleQuickAdd}
                 disabled={!canAddToCart}
