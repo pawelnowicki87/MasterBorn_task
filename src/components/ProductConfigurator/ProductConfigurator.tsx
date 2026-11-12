@@ -158,8 +158,11 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
   const [showShareModal, setShowShareModal] = useState(false);
   const [drafts, setDrafts] = useState<Draft[]>([]);
 
-  const [validation, setValidation] = useState<ValidationResult | null>(null);
-  const [isValid, setIsValid] = useState(false);
+  const [validationState, setValidationState] = useState<{
+    config: Configuration;
+    product: Product;
+    result: ValidationResult;
+  } | null>(null);
 
   const [previewUrl, setPreviewUrl] = useState<string>(product.imageUrl);
 
@@ -204,6 +207,13 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
     error: priceError,
   } = usePriceCalculation(currentConfig, product);
 
+  const validation =
+    validationState?.config === currentConfig && validationState?.product === product
+      ? validationState.result
+      : null;
+  const canAddToCart =
+    !readOnly && !isPriceLoading && !priceError && !!price && validation?.valid === true;
+
   const appliedDiscount = getAppliedDiscountPercentage(quantity);
   const nextTier = getNextDiscountTier(quantity);
 
@@ -241,13 +251,11 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
       try {
         const result = await validateConfiguration(currentConfig, product);
         if (!cancelled) {
-          setValidation(result);
-          setIsValid(true);
+          setValidationState({ config: currentConfig, product, result });
         }
       } catch {
         if (!cancelled) {
-          setValidation(null);
-          setIsValid(false);
+          setValidationState(null);
           setError(ERROR_CODES.UNKNOWN);
         }
       }
@@ -443,6 +451,41 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
   const handleQuickAdd = useCallback(() => {
     handleAddToCart();
   }, [handleAddToCart]);
+
+  const handleQuickAddShortcut = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (
+        event.key !== 'Enter' ||
+        !event.ctrlKey ||
+        event.altKey ||
+        event.shiftKey ||
+        event.metaKey ||
+        event.nativeEvent.isComposing ||
+        event.defaultPrevented ||
+        showDraftModal ||
+        showShareModal
+      ) {
+        return;
+      }
+
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          target.closest(
+            'textarea, input:not([type="checkbox"]):not([type="radio"]):not([type="number"])',
+          ))
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      if (event.repeat || !canAddToCart) return;
+
+      handleQuickAdd();
+    },
+    [showDraftModal, showShareModal, canAddToCart, handleQuickAdd],
+  );
 
   const handleCopyShareUrl = useCallback(() => {
     navigator.clipboard
@@ -862,7 +905,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
   // -------------------------------------------------------------------------
 
   return (
-    <div className="configurator" ref={containerRef}>
+    <div className="configurator" ref={containerRef} onKeyDown={handleQuickAddShortcut}>
       <div className="configurator-header">
         <div>
           <h1 className="configurator-title">{product.name}</h1>
@@ -934,18 +977,21 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
             {renderPriceBreakdown()}
 
             <div className="validation-indicator">
-              {isValid ? '✓ Configuration validated' : '⏳ Validating…'}
+              {!validation
+                ? '⏳ Validating…'
+                : validation.valid
+                  ? '✓ Configuration validated'
+                  : '⚠ Configuration needs attention'}
             </div>
 
             <div className="quick-add-section">
               <button
                 className="quick-add-btn"
                 onClick={handleQuickAdd}
-                disabled={
-                  readOnly || !validation?.valid || isPriceLoading || !!priceError || !price
-                }
+                disabled={!canAddToCart}
+                aria-keyshortcuts="Control+Enter"
               >
-                ⚡ Quick Add to Cart
+                ⚡ Quick Add to Cart (Ctrl+Enter)
               </button>
             </div>
           </div>
@@ -953,7 +999,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
           <button
             className="btn btn-success btn-block"
             onClick={handleAddToCart}
-            disabled={readOnly || !validation?.valid || isPriceLoading || !!priceError || !price}
+            disabled={!canAddToCart}
           >
             {isPriceLoading ? 'Calculating...' : 'Add to Cart'}
           </button>
