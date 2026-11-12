@@ -121,6 +121,26 @@
   transform: scale(1.1);
 }
 
+.color-swatch-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.color-swatch.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.color-swatch:focus-within {
+  outline: 2px solid #3498db;
+  outline-offset: 3px;
+}
+
 .color-swatch.selected {
   border-color: #333;
 }
@@ -189,12 +209,19 @@
 
 .toggle-switch {
   position: relative;
+  padding: 0;
+  border: 0;
   width: 48px;
   height: 26px;
   background: #ccc;
   border-radius: 13px;
   cursor: pointer;
   transition: background 0.3s;
+}
+
+.toggle-switch:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .toggle-switch.active {
@@ -273,12 +300,14 @@
 }
 
 .addon-name {
+  display: block;
   font-weight: 500;
   color: #333;
   margin-bottom: 4px;
 }
 
 .addon-description {
+  display: block;
   font-size: 12px;
   color: #666;
 }
@@ -478,11 +507,26 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  z-index: 1000;
+}
+
+.modal-overlay[open] {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+}
+
+.modal-overlay::backdrop {
+  background: rgba(0, 0, 0, 0.5);
 }
 
 .modal {
@@ -614,13 +658,14 @@
 .btn:focus,
 .option-select:focus,
 .quantity-input:focus,
-.toggle-switch:focus {
+.quantity-btn:focus,
+.toggle-switch:focus,
+.addon-checkbox:focus,
+.modal-close:focus,
+.quick-add-btn:focus {
   outline: 2px solid #3498db;
   outline-offset: 2px;
 }
-
-/* Missing focus style for color swatches - accessibility issue */
-/* .color-swatch:focus { } */
 
 /* Draft List in Modal */
 .draft-list {

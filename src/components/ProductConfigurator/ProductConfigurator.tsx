@@ -18,7 +18,7 @@
  * - "Resize handler might have a leak" - Marcus
  */
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, useId } from 'react';
 import type {
   Product,
   ProductOption,
@@ -167,7 +167,10 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const colorPickerRef = useRef<HTMLDivElement>(null);
+  const draftDialogRef = useRef<HTMLDialogElement>(null);
+  const shareDialogRef = useRef<HTMLDialogElement>(null);
   const lastFocusedElement = useRef<HTMLElement | null>(null);
+  const instanceId = useId();
 
   // -------------------------------------------------------------------------
   // Derived State
@@ -289,6 +292,44 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
       getAllDrafts().then(setDrafts);
     }
   }, [showDraftModal]);
+
+  useEffect(() => {
+    const dialog = showDraftModal
+      ? draftDialogRef.current
+      : showShareModal
+        ? shareDialogRef.current
+        : null;
+    if (!dialog) return;
+
+    const trigger = lastFocusedElement.current;
+    dialog.showModal();
+
+    const handleTab = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+
+      const controls = dialog.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), input:not(:disabled)',
+      );
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      const target = event.shiftKey
+        ? document.activeElement === first && last
+        : document.activeElement === last && first;
+
+      if (target) {
+        event.preventDefault();
+        target.focus();
+      }
+    };
+
+    dialog.addEventListener('keydown', handleTab);
+
+    return () => {
+      dialog.removeEventListener('keydown', handleTab);
+      dialog.close();
+      trigger?.focus();
+    };
+  }, [showDraftModal, showShareModal]);
 
   // -------------------------------------------------------------------------
   // Event Handlers
@@ -418,20 +459,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
     } else {
       setShowShareModal(false);
     }
-
-    if (lastFocusedElement.current) {
-      lastFocusedElement.current.focus();
-    }
   }, []);
-
-  const handleModalKeyDown = useCallback(
-    (e: React.KeyboardEvent, modalType: 'draft' | 'share') => {
-      if (e.key === 'Escape') {
-        handleModalClose(modalType);
-      }
-    },
-    [handleModalClose],
-  );
 
   const handleDiscardChanges = useCallback(() => {
     setSelections(getDefaultSelections(product));
@@ -477,26 +505,34 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
 
     return (
       <div className="option-group" key={option.id}>
-        <label className="option-label">
+        <span className="option-label" id={`${instanceId}-${option.id}-label`}>
           {option.name}
           {option.required && <span className="required">*</span>}
-        </label>
+        </span>
         <div
           className="color-picker"
           ref={colorPickerRef}
           role="radiogroup"
-          aria-label={option.name}
+          aria-labelledby={`${instanceId}-${option.id}-label`}
         >
-          {option.choices?.map((choice, index) => (
-            <div
-              key={index}
-              className={`color-swatch ${currentValue === choice.value ? 'selected' : ''}`}
+          {option.choices?.map((choice) => (
+            <label
+              key={choice.id}
+              className={`color-swatch ${currentValue === choice.value ? 'selected' : ''} ${readOnly || !choice.available ? 'disabled' : ''}`}
               style={{ backgroundColor: choice.colorHex }}
-              onClick={() => !readOnly && handleOptionChange(option.id, choice.value)}
               title={choice.label}
-              role="radio"
-              aria-checked={currentValue === choice.value}
-            />
+            >
+              <input
+                type="radio"
+                className="color-swatch-input"
+                name={`${instanceId}-${option.id}`}
+                value={choice.value}
+                checked={currentValue === choice.value}
+                onChange={() => handleOptionChange(option.id, choice.value)}
+                disabled={readOnly || !choice.available}
+                aria-label={choice.label}
+              />
+            </label>
           ))}
         </div>
       </div>
@@ -554,18 +590,14 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
     return (
       <div className="option-group" key={option.id}>
         <div className="toggle-control">
-          <div
+          <button
+            type="button"
             className={`toggle-switch ${currentValue ? 'active' : ''}`}
-            onClick={() => !readOnly && handleOptionChange(option.id, !currentValue)}
+            onClick={() => handleOptionChange(option.id, !currentValue)}
             role="switch"
             aria-checked={currentValue}
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                handleOptionChange(option.id, !currentValue);
-              }
-            }}
+            aria-label={option.name}
+            disabled={readOnly}
           />
           <span className="toggle-label">{option.name}</span>
         </div>
@@ -600,29 +632,32 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
     const isAvailable = isAddOnAvailable(addOn, selections);
 
     return (
-      <div
-        key={addOn.name}
+      <label
+        key={addOn.id}
         className={`addon-item ${isSelected ? 'selected' : ''} ${!isAvailable ? 'disabled' : ''}`}
-        onClick={() => !readOnly && isAvailable && handleAddOnToggle(addOn.id)}
       >
         <input
           type="checkbox"
           className="addon-checkbox"
           checked={isSelected}
-          onChange={() => {}}
+          onChange={() => handleAddOnToggle(addOn.id)}
           disabled={readOnly || !isAvailable}
+          aria-labelledby={`${instanceId}-${addOn.id}-name`}
+          aria-describedby={`${instanceId}-${addOn.id}-description`}
         />
-        <div className="addon-info">
-          <div className="addon-name">{addOn.name}</div>
-          <div className="addon-description">
+        <span className="addon-info">
+          <span className="addon-name" id={`${instanceId}-${addOn.id}-name`}>
+            {addOn.name}
+          </span>
+          <span className="addon-description" id={`${instanceId}-${addOn.id}-description`}>
             {addOn.description}
             {!isAvailable && addOn.dependsOn && (
               <span style={{ color: '#e74c3c' }}> (Requires {addOn.dependsOn.optionId})</span>
             )}
-          </div>
-        </div>
-        <div className="addon-price">+{formatPrice(addOn.price, product.currency)}</div>
-      </div>
+          </span>
+        </span>
+        <span className="addon-price">+{formatPrice(addOn.price, product.currency)}</span>
+      </label>
     );
   };
 
@@ -685,14 +720,21 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
     if (!showDraftModal) return null;
 
     return (
-      <div
+      <dialog
+        ref={draftDialogRef}
         className="modal-overlay"
         onClick={() => handleModalClose('draft')}
-        onKeyDown={(e) => handleModalKeyDown(e, 'draft')}
+        aria-labelledby={`${instanceId}-draft-title`}
+        onCancel={(e) => {
+          e.preventDefault();
+          handleModalClose('draft');
+        }}
       >
         <div className="modal" onClick={(e) => e.stopPropagation()}>
           <div className="modal-header">
-            <h3 className="modal-title">Saved Drafts</h3>
+            <h3 className="modal-title" id={`${instanceId}-draft-title`}>
+              Saved Drafts
+            </h3>
             <button
               className="modal-close"
               onClick={() => handleModalClose('draft')}
@@ -742,6 +784,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
               <h4>Save Current Configuration</h4>
               <input
                 type="text"
+                aria-label="Draft name (optional)"
                 placeholder="Draft name (optional)"
                 value={draftName}
                 onChange={(e) => setDraftName(e.target.value)}
@@ -759,7 +802,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
             </div>
           </div>
         </div>
-      </div>
+      </dialog>
     );
   };
 
@@ -767,14 +810,21 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
     if (!showShareModal) return null;
 
     return (
-      <div
+      <dialog
+        ref={shareDialogRef}
         className="modal-overlay"
         onClick={() => handleModalClose('share')}
-        onKeyDown={(e) => handleModalKeyDown(e, 'share')}
+        aria-labelledby={`${instanceId}-share-title`}
+        onCancel={(e) => {
+          e.preventDefault();
+          handleModalClose('share');
+        }}
       >
         <div className="modal" onClick={(e) => e.stopPropagation()}>
           <div className="modal-header">
-            <h3 className="modal-title">Share Configuration</h3>
+            <h3 className="modal-title" id={`${instanceId}-share-title`}>
+              Share Configuration
+            </h3>
             <button
               className="modal-close"
               onClick={() => handleModalClose('share')}
@@ -787,6 +837,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
             <p>Copy this link to share your configuration:</p>
             <input
               type="text"
+              aria-label="Configuration link"
               className="share-url-input"
               value={shareUrl}
               readOnly
@@ -802,7 +853,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
             </button>
           </div>
         </div>
-      </div>
+      </dialog>
     );
   };
 
@@ -820,8 +871,8 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
         <div className="configurator-actions">
           <button
             className="btn btn-secondary"
-            onClick={() => {
-              lastFocusedElement.current = document.activeElement as HTMLElement;
+            onClick={(e) => {
+              lastFocusedElement.current = e.currentTarget;
               setShowDraftModal(true);
             }}
           >
@@ -829,8 +880,8 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
           </button>
           <button
             className="btn btn-secondary"
-            onClick={() => {
-              lastFocusedElement.current = document.activeElement as HTMLElement;
+            onClick={(e) => {
+              lastFocusedElement.current = e.currentTarget;
               setShowShareModal(true);
             }}
           >
