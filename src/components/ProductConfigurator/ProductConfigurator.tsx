@@ -134,8 +134,17 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
     const params = new URLSearchParams(window.location.search);
     const encodedConfig = params.get('config');
     const sharedConfiguration = encodedConfig ? decodeConfigurationFromUrl(encodedConfig) : null;
+    const invalidShareLink =
+      encodedConfig !== null &&
+      (!sharedConfiguration ||
+        (sharedConfiguration.productId !== undefined &&
+          sharedConfiguration.productId !== product.id));
 
-    return { ...initialConfiguration, ...sharedConfiguration };
+    return {
+      ...initialConfiguration,
+      ...(!invalidShareLink ? sharedConfiguration : null),
+      invalidShareLink,
+    };
   });
 
   const [selections, setSelections] = useState<Record<string, string | number | boolean>>(
@@ -152,7 +161,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
 
   const [isDirty, setIsDirty] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
-  const [draftName, setDraftName] = useState('');
+  const [draftName, setDraftName] = useState(() => startingConfiguration.name || '');
 
   const [showDraftModal, setShowDraftModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
@@ -197,7 +206,9 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
     if (!showShareModal) return '';
 
     const encoded = encodeConfigurationToUrl(currentConfig);
-    return `${window.location.origin}${window.location.pathname}?config=${encoded}`;
+    const url = new URL(window.location.href);
+    url.searchParams.set('config', encoded);
+    return url.toString();
   }, [showShareModal, currentConfig]);
 
   const {
@@ -394,7 +405,6 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
       await saveDraft(currentConfig, draftName || 'Untitled Draft');
       setLastSaved(new Date());
       setIsDirty(false);
-      setDraftName('');
 
       setShowDraftModal(false);
     } catch {
@@ -416,6 +426,7 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
             ),
           );
           setQuantity(draft.configuration.quantity);
+          setDraftName(draft.configuration.name || draft.name);
           setShowDraftModal(false);
           setIsDirty(false);
         }
@@ -937,6 +948,13 @@ export const ProductConfigurator: React.FC<ProductConfiguratorProps> = ({
           )}
         </div>
       </div>
+
+      {startingConfiguration.invalidShareLink && (
+        <div className="error-message" role="alert">
+          This configuration link is invalid or belongs to another product. Please ask for a new
+          link.
+        </div>
+      )}
 
       {(error || priceError) && (
         <div className="error-message">
