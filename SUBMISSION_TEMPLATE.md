@@ -2,167 +2,139 @@
 
 ## Time Spent
 
-Total time: **approximately 4.5 hours of active work**, excluding breaks.
+I spent about **4.5 hours** on the task, excluding breaks.
 
 ## Ticket Triage
 
 ### Tickets I Addressed
 
-1. **CFG-142**: Fixed price responses being discarded, stale responses and stale loading state. Both cart actions require a current price. The existing dimmed loading display is retained, covering **CFG-149** without a separate UI feature.
-2. **CFG-148**: Removed unavailable add-ons when their dependencies change, without mutating state. Applied the same filtering to initial configurations and loaded drafts, and guarded the summary against missing add-ons.
-3. **CFG-152**: Added native radio inputs for colors, keyboard-operable controls, accessible names, visible focus and modal focus management.
-4. **CFG-145**: Added a scoped Ctrl+Enter shortcut. It shares the cart safeguards, ignores repeated key events and does not run in dialogs or text-editing fields. Validation must belong to the current configuration and product.
-5. **CFG-147**: Fixed Unicode encoding, URL-safe serialization, product identification and configuration-name restoration. Preserved older links and rejected malformed payloads.
-6. **CFG-143, partial**: Fixed the confirmed resize-listener leak. This does not establish that every cause of sluggishness during a long session has been resolved.
+1. **CFG-142 / CFG-149:** Fixed price updates and loading state. Old responses cannot replace the current price, and cart actions wait for a current result.
+2. **CFG-148:** Fixed the packaging crash and removed add-ons when their requirements stop being met. This also applies to loaded drafts and shared configurations.
+3. **CFG-152:** Added keyboard support for colors and controls, visible focus and focus handling in dialogs.
+4. **CFG-145:** Added Ctrl+Enter for Quick Add, with the same price and validation checks as the button.
+5. **CFG-147:** Fixed Unicode share links, restored the product and configuration name, and kept older links working.
+6. **CFG-143, partial:** Added cleanup for the resize listener. I have not confirmed that this explains all reported performance problems.
 
 ### Tickets I Deprioritized
 
-| Ticket  | Reason                                                                                                                                          |
-| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| CFG-144 | Conflicts with the newer, explicit demo requirement in CFG-145. Kept Quick Add pending Product confirmation.                                    |
-| CFG-146 | The current code already formats saved timestamps in local time. A reproducible timezone case is needed before changing it.                     |
-| CFG-150 | The missing screenshot and viewport details are needed. The picker uses flex layout; the calculated column variable is not consumed by its CSS. |
-| CFG-151 | A complete error-message mapping and recovery flow were left for follow-up. Invalid share links do get an actionable message.                   |
-| CFG-153 | A new comparison feature, estimated at weeks, does not fit the demo-stability scope.                                                            |
-| CFG-154 | Pricing sources disagree about thresholds and percentages. Left the rules unchanged pending PM/Finance confirmation.                            |
-| CFG-155 | Dark mode is useful but is not a demo blocker.                                                                                                  |
-| CFG-156 | Used stable IDs in the color and add-on markup that changed for accessibility. Did not perform a separate sweep of every list.                  |
-| CFG-157 | Corrected dirty-state updates while resolving lint issues, but did not implement the navigation-confirmation flow.                              |
-| CFG-158 | `currentConfig` was already memoized and `product` came from a stable import. No evidence justified adding the suggested memoization.           |
+| Ticket  | Reason                                                                                                           |
+| ------- | ---------------------------------------------------------------------------------------------------------------- |
+| CFG-144 | Conflicts with the required Quick Add shortcut. I kept the feature for the demo.                                 |
+| CFG-146 | Time is already formatted locally. I need a reproducible timezone case before changing it.                       |
+| CFG-150 | The screenshot is missing. The picker uses flex; its calculated column variable is not used by CSS.              |
+| CFG-151 | I left the general error-message cleanup for later. Invalid share links have a clear message.                    |
+| CFG-153 | The estimated scope is weeks, so I left comparison out.                                                          |
+| CFG-154 | The discount rules conflict. I did not change pricing policy without confirmation.                               |
+| CFG-155 | I prioritized reliability and keyboard access over dark mode.                                                    |
+| CFG-156 | I used stable IDs in the color and add-on markup I changed, but did not review every list.                       |
+| CFG-157 | I corrected dirty-state updates, but did not add navigation confirmation.                                        |
+| CFG-158 | `currentConfig` was already memoized and `product` was stable. I did not add more memoization without profiling. |
 
 ### Tickets That Need Clarification
 
-| Ticket            | Question                                                                                                                                                                  |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CFG-144 / CFG-145 | Does the Quick Add sunset apply to this demo, given TechStyle's explicit shortcut requirement?                                                                            |
-| CFG-154           | What are the approved boundaries and percentages for every quantity tier? The code/context say 10% at the upper tier, while the ticket quotes public material saying 15%. |
-| CFG-146 / CFG-150 | Can QA provide the failing timezone case and the missing mobile screenshot with viewport dimensions?                                                                      |
+- **CFG-144 / CFG-145:** Should Quick Add be removed after the demo, or retained for TechStyle?
+- **CFG-154:** Which thresholds and rates are correct? The code/context use 10% for the upper tier, while the ticket mentions 15%.
+- **CFG-146 / CFG-150:** I would ask QA for the timezone reproduction and the mobile screenshot with viewport dimensions.
 
 ### Tickets With a Misleading Priority Label
 
-| Ticket  | Label on board | My priority       | Why                                                                           |
-| ------- | -------------- | ----------------- | ----------------------------------------------------------------------------- |
-| CFG-152 | Low            | High              | Keyboard access is part of the client's stated compliance requirements.       |
-| CFG-145 | High           | Demo requirement  | The description explicitly calls the shortcut mandatory for the demo.         |
-| CFG-153 | Medium         | Deferred          | A multi-week feature would displace reliability fixes.                        |
-| CFG-158 | High           | Investigate later | The proposed fix does not match the code; profiling evidence is needed first. |
+| Ticket  | Board label | My decision                                       |
+| ------- | ----------- | ------------------------------------------------- |
+| CFG-152 | Low         | High: the client requires keyboard accessibility. |
+| CFG-145 | High        | Required for the demo, according to the ticket.   |
+| CFG-153 | Medium      | Deferred: too large for this task.                |
+| CFG-158 | High        | Deferred: the suggested fix was already present.  |
 
 ### Tickets Where I Stopped to Ask Instead of Implementing
 
-These are clarification questions for the team; no PM/Finance response was available during the exercise.
+I left these decisions open for confirmation; I did not receive a PM/Finance clarification during the exercise.
 
-| Ticket            | Who I would ask                         | Question and decision                                                                                                                                                                                    |
-| ----------------- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CFG-154           | PM and Finance                          | Confirm inclusive/exclusive thresholds and discount rates, including quantities 10 and 50. Both changing and retaining the current behavior carry financial risk; I did not choose a new pricing policy. |
-| CFG-144 / CFG-145 | Product and the TechStyle account owner | Confirm whether removal is postponed or the demo is an exception. I retained Quick Add and implemented the explicit demo requirement.                                                                    |
+| Ticket            | Who I would ask         | Question                                                                                                                               |
+| ----------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| CFG-154           | PM / Finance            | Confirm the discount rates and whether quantities 10 and 50 are included in their tiers. Changing either interpretation affects money. |
+| CFG-144 / CFG-145 | Product / account owner | Confirm how the planned removal relates to the required demo shortcut. I followed the explicit demo requirement.                       |
 
 ## Technical Write-Up
 
 ### Critical Issues Found
 
-#### Price responses were compared against an unrelated clock
+#### Price updates — CFG-142
 
-**Tickets:** CFG-142, CFG-149.
+The hook compared `Date.now()` with an API field that actually contained a request counter. This discarded valid results. Older requests could also clear the loading state too early.
 
-**Bug:** The hook compared `Date.now()` with `response.timestamp`, but the mock API puts a small request counter in that field. Valid responses were discarded. An older request could also end the loading state of a newer one.
+I replaced that comparison with a local request ID. A price is accepted only for the current configuration and product. Changing options immediately blocks the old price from being added to the cart.
 
-**Investigation:** Followed the response field from the API to the hook and checked responses completing out of order.
+#### Add-on crash — CFG-148
 
-**Fix:** A local increasing request ID accepts only the latest result. Cleanup invalidates pending requests. A result is usable only for its configuration and product, so changing inputs immediately hides the old price and blocks cart actions.
+Dependency cleanup only handled select controls. Disabling packaging left Gift Wrap selected, and the summary read `.price` from a missing add-on. The previous cleanup also mutated state with `splice`.
 
-**Reason:** This preserves the asynchronous API and does not depend on server clocks or the mock response field.
+I now filter add-ons against the new selections for all option changes. I reuse this when loading data and guard the summary against missing entries. This removes the invalid add-on and its cost, rather than only hiding the crash.
 
-#### Dependency changes left invalid add-ons in state
+#### Share links — CFG-147
 
-**Ticket:** CFG-148.
+`btoa` could not encode the supplied Polish/emoji name. The URL also omitted the product ID, and the widget did not restore the name.
 
-**Bug:** Cleanup only covered select controls. Turning packaging off left Gift Wrap selected, while the summary looked it up in a map of available add-ons and read `.price` from `undefined`. The select cleanup also used `splice` on React state.
-
-**Investigation:** Reproduced the packaging crash and checked engraving after a material change.
-
-**Fix:** Filter selected IDs against the next selections for every option change. Reuse the filter when restoring configurations and drafts. The summary also handles a missing add-on safely.
-
-**Reason:** Fixing the state invariant avoids retaining or charging for an invalid add-on. A null check alone would only hide the crash.
-
-#### Share links did not support Unicode or fully restore state
-
-**Ticket:** CFG-147.
-
-**Bug:** `btoa` received JSON containing Unicode directly. Standard Base64 was inserted into a query string without URL-safe handling. The configuration name was not restored, and the payload did not identify the product.
-
-**Investigation:** Reproduced the supplied Polish/emoji example. This is an encoding issue, not a development-only build issue.
-
-**Fix:** Added versioned UTF-8/Base64URL encoding, legacy decoding, payload-shape checks and URL construction through `URL.searchParams`. Names survive sharing and draft save/load. The demo resolves its two known products, and the widget rejects links for a different product.
-
-**Reason:** New links are unambiguous while existing ASCII and Latin-1 links remain readable, including old query strings where `+` became a space.
+I added versioned UTF-8/Base64URL encoding, kept legacy decoding and checked the payload shape. The link restores the product and name, preserves other URL parameters and shows an error for invalid data. The demo can open either of its two known products.
 
 ### Other Changes Made
 
-- Used native radio inputs and a button-based switch. Add-on labels now operate their checkboxes directly.
-- Used native modal dialogs with explicit Tab/Shift+Tab wrapping, Escape handling and focus restoration after closing, saving or loading.
-- Removed the unused debounced pricing hook, replaced two `any` types and resolved the existing lint errors without disabling rules.
-- Moved dirty-state updates to change handlers and URL restoration to initialization. Share URLs are derived rather than copied into state by an effect.
-- Removed the resize listener using the same handler reference during effect cleanup.
+- Used native radio inputs, a button-based switch and labels for add-on checkboxes.
+- Added modal focus wrapping, Escape handling and focus return after closing, saving or loading.
+- Removed the unused debounced price hook, replaced two `any` types and fixed the existing lint errors.
+- Moved dirty-state updates into handlers and URL loading into initialization.
+- Removed the resize listener in effect cleanup.
 
 ## Validation
 
-- `pnpm lint` and `pnpm build` pass.
-- Prettier checks pass for the changed files. The repository-wide `pnpm format:check` still reports formatting differences in 19 unchanged template files; those were left out of scope.
-- Browser checks covered out-of-order price responses, stale failures, refetching, unmounting, and cart safeguards while price or validation is pending.
-- Checked keyboard navigation, disabled/read-only controls, modal focus boundaries and restoration, and a mobile dialog viewport.
-- Checked Ctrl+Enter inside and outside the widget, repeated keys, text editing, dialogs and invalid configurations.
-- Checked the exact share-link example in a production bundle, legacy links, invalid payloads, product selection and draft-name persistence.
-- Across 25 StrictMode mount/unmount cycles, all 50 resize registrations were removed. A mounted widget had one active resize handler.
+- `pnpm lint` and `pnpm build` pass. Changed files pass Prettier.
+- Full `pnpm format:check` still fails on **19 unchanged template files**. I left those outside this change.
+- Browser checks covered response ordering, cart safeguards, add-on dependencies, keyboard controls, dialogs, Ctrl+Enter and share-link compatibility.
+- In 25 StrictMode mount/unmount cycles, all resize listeners were removed.
 
-With `pnpm dev` running, [open the ticket's T-shirt example](http://localhost:5173/?config=v1.eyJwIjoicHJvZF90c2hpcnRfMDAxIiwicyI6eyJzaXplIjoiMTBfbGFyZ2UiLCJjb2xvciI6ImJsdWVfY3VzdG9tXzMiLCJxdWFudGl0eSI6MX0sImEiOltdLCJxIjo1LCJuIjoixbvDs8WCxIcgdGVzdCDwn46oIn0). It restores `10" Large`, `Blue (Custom #3)`, quantity 5 and the name `Żółć test 🎨`; the total is `$159.95`.
+The browser checks used temporary local harnesses with controlled responses where needed. No test framework was added. External placeholder images were blocked during those checks. I did not carry out a full WCAG audit or a long-session performance profile.
 
-Browser checks used temporary local harnesses, including controlled API responses; no test framework or test dependencies were added to the repository. External placeholder-image requests were blocked in those checks. This was not a full WCAG audit or a 20-minute performance profile.
+With `pnpm dev` running, [open the T-shirt example](http://localhost:5173/?config=v1.eyJwIjoicHJvZF90c2hpcnRfMDAxIiwicyI6eyJzaXplIjoiMTBfbGFyZ2UiLCJjb2xvciI6ImJsdWVfY3VzdG9tXzMiLCJxdWFudGl0eSI6MX0sImEiOltdLCJxIjo1LCJuIjoixbvDs8WCxIcgdGVzdCDwn46oIn0). It should restore `10" Large`, `Blue (Custom #3)`, quantity 5 and `Żółć test 🎨`, with a total of `$159.95`.
 
 ## Code Quality Notes
 
 ### Things I Noticed But Didn't Fix
 
-| Issue                                    | Why I Left It                                                                                                                                   |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Large component                          | A broad extraction would increase regression risk within this time budget.                                                                      |
-| Product-specific validation gaps         | The shared-payload checks validate structure, not every product choice and quantity limit. Server-side/domain validation needs a separate pass. |
-| Floating-point price arithmetic          | Cent-based calculations deserve follow-up alongside confirmed pricing rules.                                                                    |
-| Requests on name edits                   | Price, preview and validation still react to configuration-name changes. Optimize their inputs after profiling.                                 |
-| Mobile color layout and technical errors | Kept these separate from the demonstrated crashes and stale-state bugs.                                                                         |
+- The component is still large. I avoided a broad refactor within the time limit.
+- URL checks cover data structure, but full product-choice and quantity-limit validation still needs work.
+- Prices still use floating-point arithmetic.
+- Editing a configuration name still triggers pricing, preview and validation requests.
 
 ### Potential Improvements for the Future
 
-1. Add a maintained regression-test setup for request ordering, dependencies and URL compatibility.
-2. Profile a sustained session and separate pricing inputs from unrelated configuration metadata.
-3. Complete product validation, error recovery and a broader accessibility review.
+1. Add repeatable regression tests to the repository.
+2. Profile a longer session before further performance changes.
+3. Extend product validation, error recovery and accessibility testing.
 
 ## Questions for the Team
 
-1. Who owns the authoritative pricing specification, and can PM/Finance confirm it before CFG-154 changes?
-2. Is Quick Add retained for TechStyle only or for all clients?
-3. Can QA provide the missing timezone and mobile-layout reproductions?
+My main questions are the pricing policy, the future of Quick Add and the missing QA reproductions listed above.
 
 ## Assumptions Made
 
-1. Reliability and the explicit TechStyle demo requirements take priority over new features and visual polish.
-2. Unavailable add-ons should be removed when their requirements stop being met; re-enabling a requirement should not silently reselect them.
-3. A malformed or mismatched share link should show an error and leave the default configuration available. Legacy links without a product ID remain tied to the host's product.
-4. The demo can select either known mock product from a new share link. Production embedding would resolve products through the host/catalog.
+- Demo reliability and explicit client requirements come first.
+- Invalid add-ons should be removed, and should not be reselected automatically when a requirement is enabled again.
+- Invalid share links show an error and leave the default configuration available. Older links without a product ID use the host's product.
+- The demo resolves its two mock products. In production, the host/catalog would resolve the product.
 
 ## Self-Assessment
 
 ### What went well?
 
-The changes stayed focused on reproducible failures and were split into small commits. The pricing API and existing component architecture were retained.
+I kept the fixes focused and split them into separate commits.
 
 ### What was challenging?
 
-Ticket labels and suggested fixes did not always match the code or the demo requirements. Pricing needed an explicit decision to wait for clarification.
+Some ticket labels and suggested fixes did not match the code. I had to leave the conflicting pricing rules for clarification.
 
 ### What would I do differently with more time?
 
-Add repeatable repository tests, profile longer sessions and validate the full keyboard flow with assistive technology and additional browsers.
+I would add repository tests and check longer sessions, more browsers and assistive technology.
 
 ## Additional Notes
 
-Code changes are on `fix/configurator`. The PR compares against `task-base`, which points to the initial template commit, so the complete solution is reviewable even though some fixes were already committed to `main`.
+The PR compares `fix/configurator` with `task-base`, the initial template commit, because some changes had already been committed to `main`.
